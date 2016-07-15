@@ -151,6 +151,79 @@ the decided post-configure prerequisites.
 
     $instance->configure()->eumm_merge_config(\%WriteMakefileArgs);
 
+# `DynPreqFile` Specification
+
+`DynPreqFile`'s syntax is heavily borrowed from [cpanfile](https://metacpan.org/pod/cpanfile)'s syntax.
+
+It however has notable distinctions:
+
+- **Conditional** _Configuration_ Feature Groups
+- Static Human descriptions of conditions
+- Executable code blocks that return true/false for feature group inclusion
+
+.
+
+    providing $name => sub {
+      condition $description => \&boolean_test;
+
+      requires $module_name  => $version;
+      on $phase => sub {
+        requires $module_name  => $version;
+      };
+    };
+
+## `providing`
+
+Define a feature group for conditional inclusion ( Note this is **DIFFERENT**
+to `cpanfile`'s `feature` with special note of [`condition`](#condition)).
+
+    providing $name, \&coderef
+
+`&coderef` will be called and all method calls inside it will
+define a specification for a group named `$name`
+
+Valid only at global scope.
+
+## `condition`
+
+    condition $desc => \&test_code
+
+Define a 2-part condition as a property of the current feature group ( `providing` )
+
+`$desc` is used in exported metadata for humans to read, and it should describe in
+a system agnostic way what condition the `&test_code` is testing for in human terms.
+
+`&test_code` is attached to the feature group and is used during `configure` to determine
+which features to include.
+
+This is valid only inside a `providing` section.
+
+## `requires`, `recommends`, `suggests`, `conflicts`
+
+These are the same as per [`cpanfile`](https://metacpan.org/pod/cpanfile#SYNTAX)'s definition of the same.
+
+All are valid inside a `providing` section and inside an `on` section, but **not**
+inside `condition`'s `&test_code`.
+
+## `on`
+
+These are the same as per [`cpanfile`](https://metacpan.org/pod/cpanfile#SYNTAX)'s definition of the same,
+**EXCEPT** for phase `configure`, which is **Banned**:
+
+All configure requirements must be satisfied _Before_ using `DynPreqFile`
+because there is no "second configure phase" after `Makefile.PL` is run, so
+stipulating extra configure requirements inside configure just cannot work.
+
+All are valid inside a `providing` section and inside an `on` section, but **not**
+inside `condition`'s `&test_code`.
+
+## `feature`, `*_requires`
+
+These features are **NOT** available as `feature` and `providing` are presently
+considered to have no usable feature overlaps.
+
+( And you can probably implement `feature` with `providing` in some regards )
+
 # AUTHOR
 
 Kent Fredric <kentnl@cpan.org>

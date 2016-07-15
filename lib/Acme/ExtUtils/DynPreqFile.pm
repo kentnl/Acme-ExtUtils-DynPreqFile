@@ -161,3 +161,82 @@ but it can be used to automatically update C<WriteMakefileArgs> to communicate
 the decided post-configure prerequisites.
 
   $instance->configure()->eumm_merge_config(\%WriteMakefileArgs);
+
+=head1 C<DynPreqFile> Specification
+
+C<DynPreqFile>'s syntax is heavily borrowed from L<cpanfile>'s syntax.
+
+It however has notable distinctions:
+
+=over 4
+
+=item * B<Conditional> I<Configuration> Feature Groups
+
+=item * Static Human descriptions of conditions
+
+=item * Executable code blocks that return true/false for feature group inclusion
+
+=back
+
+.
+
+  providing $name => sub {
+    condition $description => \&boolean_test;
+
+    requires $module_name  => $version;
+    on $phase => sub {
+      requires $module_name  => $version;
+    };
+  };
+
+=head2 C<providing>
+
+Define a feature group for conditional inclusion ( Note this is B<DIFFERENT>
+to C<cpanfile>'s C<feature> with special note of L<< C<condition>|/condition >>).
+
+  providing $name, \&coderef
+
+C<&coderef> will be called and all method calls inside it will
+define a specification for a group named C<$name>
+
+Valid only at global scope.
+
+=head2 C<condition>
+
+  condition $desc => \&test_code
+
+Define a 2-part condition as a property of the current feature group ( C<providing> )
+
+C<$desc> is used in exported metadata for humans to read, and it should describe in
+a system agnostic way what condition the C<&test_code> is testing for in human terms.
+
+C<&test_code> is attached to the feature group and is used during C<configure> to determine
+which features to include.
+
+This is valid only inside a C<providing> section.
+
+=head2 C<requires>, C<recommends>, C<suggests>, C<conflicts>
+
+These are the same as per L<< C<cpanfile>|cpanfile/SYNTAX >>'s definition of the same.
+
+All are valid inside a C<providing> section and inside an C<on> section, but B<not>
+inside C<condition>'s C<&test_code>.
+
+=head2 C<on>
+
+These are the same as per L<< C<cpanfile>|cpanfile/SYNTAX >>'s definition of the same,
+B<EXCEPT> for phase C<configure>, which is B<Banned>:
+
+All configure requirements must be satisfied I<Before> using C<DynPreqFile>
+because there is no "second configure phase" after C<Makefile.PL> is run, so
+stipulating extra configure requirements inside configure just cannot work.
+
+All are valid inside a C<providing> section and inside an C<on> section, but B<not>
+inside C<condition>'s C<&test_code>.
+
+=head2 C<feature>, C<*_requires>
+
+These features are B<NOT> available as C<feature> and C<providing> are presently
+considered to have no usable feature overlaps.
+
+( And you can probably implement C<feature> with C<providing> in some regards )
