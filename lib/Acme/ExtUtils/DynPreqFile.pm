@@ -32,6 +32,39 @@ sub metadata {
   return $out;
 }
 
+sub _autoflush_fh {
+  my ( $filehandle, $new_value ) = @_;
+  ## no critic (ProhibitOneArgSelect, RequireLocalizedPunctuationVars)
+  my $old_filehandle = select $filehandle;
+  my $old_value      = $|;
+  $| = $new_value;
+  select $old_filehandle;
+  return $old_value;
+}
+
+sub configure {
+  my ($self) = @_;
+  my $meta   = $self->_metadata;
+  my $rs     = Acme::ExtUtils::DynPreqFile::Result->new();
+
+  my $old_autoflush = _autoflush_fh( *STDERR, 1 );
+  for my $provide ( sort keys %{$meta} ) {
+    ## no critic (RequireCheckedSyscalls)
+    print {*STDERR} q[- ] . $provide . qq[\n];
+    print {*STDERR} q[  * ] . $meta->{$provide}->{condition}->{description} . q[? ];
+    my $result = $meta->{$provide}->{condition}->{code}->();
+    if ($result) {
+      print {*STDERR} "[Y]\n";
+    }
+    else {
+      print {*STDERR} "[N]\n";
+    }
+    $rs->add_result( $result, $provide, $meta->{$provide}->{prereqs} );
+  }
+  _autoflush_fh( *STDERR, $old_autoflush );
+  return $rs;
+}
+
 sub _metadata {
   return $_[0]->{metadata} if exists $_[0]->{metadata};
   return $_[0]->{metadata} = $_[0]->_load_metadata;
@@ -168,6 +201,37 @@ sub add_requirement {
     $prereqs->{ $_[2] }->{ $_[3] }->{ $_[4] } = $version;
   }
 }
+
+package    # Hide from PAUSE
+  Acme::ExtUtils::DynPreqFile::Result;
+
+sub new { bless { results => {} }, $_[0] }
+
+sub add_result {
+  my ( $self, $state, $name, $prereqs ) = @_;
+  $self->{results}->{$name} = {
+    state   => $state,
+    prereqs => $prereqs,
+  };
+}
+
+sub configured_requirements {
+  my ($self) = @_;
+  my $prereqs = {};
+  for my $result ( sort keys %{ $self->{results} } ) {
+    next unless $self->{results}->{$result}->{state};
+    ## TODO: Proper merging
+    for my $phase ( sort keys %{ $self->{results}->{$result}->{prereqs} } ) {
+      for my $rel ( sort keys %{ $self->{results}->{$result}->{prereqs}->{$phase} } ) {
+        for my $module ( sort keys %{ $self->{results}->{$result}->{prereqs}->{$phase}->{$rel} } ) {
+          $prereqs->{$phase}->{$rel}->{$module} = $self->{results}->{$result}->{prereqs}->{$phase}->{$rel}->{$module};
+        }
+      }
+    }
+  }
+  return $prereqs;
+}
+
 1;
 
 =head1 SYNOPSIS
