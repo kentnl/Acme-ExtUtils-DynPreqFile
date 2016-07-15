@@ -1,8 +1,13 @@
-use 5.006;  # our
+use 5.006;    # our
 use strict;
 use warnings;
 
 package Acme::ExtUtils::DynPreqFile;
+
+sub _clean_eval {
+  ## no critic (ProhibitStringyEval, RequireCheckingReturnValueOfEval, Lax::ProhibitStringyEval::ExceptForRequire)
+  eval $_[0];
+}
 
 our $VERSION = '0.001000';
 
@@ -10,6 +15,147 @@ our $VERSION = '0.001000';
 
 # AUTHORITY
 
+sub new {
+  my ( $class, $file ) = @_;
+  return bless { file => $file }, $class;
+}
+
+sub _metadata {
+  return $_[0]->{metadata} if exists $_[0]->{metadata};
+  return $_[0]->{metadata} = $_[0]->_load_metadata;
+}
+
+my $_SERIAL = 1;
+
+sub _load_metadata {
+  my $file    = $_[0]->{file};
+  my $content = do {
+    ## no critic (RequireBriefOpen)
+    open my $fh, '<', $file or die "Can't open $file, $?";
+    local $/ = undef;
+    scalar <$fh>;
+  };
+  my $package = __PACKAGE__ . '::_ANON_::Instance' . $_SERIAL++;
+  my $prelude = $_[0]->_prelude( $package, 1, $file );
+  local $@ = undef;
+  _clean_eval( $prelude . $content );
+  die $@ if $@;
+  return $package->_meta_;
+}
+
+sub _prelude {
+  my ( undef, $package, $line, $file ) = @_;
+  return <<"EOF";
+#file "${\__FILE__}"
+#line ${\(__LINE__+1)} "${\__FILE__}"
+use strict;
+use warnings;
+package $package;
+our \$META;
+our \$PROVIDING;
+our \$ON_PHASE;
+our %LEGAL_PHASES = (
+  build => 1,
+  runtime => 1,
+  test => 1,
+  develop => 1,
+);
+BEGIN { \$META      = Acme::ExtUtils::DynPreqFile::Config->new() }
+BEGIN { \$ON_PHASE  = 'runtime' }
+sub _meta_ { \$META }
+sub condition(\$\$) {
+  if ( not defined \$PROVIDING ) {
+    die "on invalid outside <providing>";
+  }
+  \$META->add_condition( \$PROVIDING, \@_ );
+}
+sub provides(\$\$) {
+  local \$PROVIDING = \$_[0];
+  \$META->add_provide( \$PROVIDING );
+  \$_[1]->();
+  \$META->finalize_provide( \$PROVIDING );
+}
+sub on(\$\$) {
+  local \$ON_PHASE = \$_[0];
+  if ( not defined \$PROVIDING ) {
+    die "on invalid outside PROVIDING";
+  }
+  if ( not exists \$LEGAL_PHASES{\$ON_PHASE} ) {
+    die "\$ON_PHASE is not a valid phase";
+  }
+  \$_[1]->();
+}
+sub requires(\$;\$) {
+  \$META->add_requirement(\$PROVIDING, \$ON_PHASE, 'requires', \@_ );
+}
+sub recommends(\$;\$) {
+  \$META->add_requirement(\$PROVIDING, \$ON_PHASE, 'recommends', \@_ );
+}
+sub suggests(\$;\$) {
+  \$META->add_requirement(\$PROVIDING, \$ON_PHASE, 'suggests', \@_ );
+}
+sub conflicts(\$;\$) {
+  \$META->add_requirement(\$PROVIDING, \$ON_PHASE, 'conflicts', \@_ );
+}
+#file "$file"
+#line $line "$file"
+EOF
+}
+
+package    # Hide from PAUSE
+  Acme::ExtUtils::DynPreqFile::Config;
+
+sub new { bless {}, $_[0] }
+
+sub add_provide {
+  if ( exists $_[0]->{ $_[1] } ) {
+    die "provide target $_[1] already defined";
+  }
+  $_[0]->{ $_[1] } = {};
+}
+
+sub finalize_provide {
+  if ( not exists $_[0]->{ $_[1] } ) {
+    die "provide target $_[1] not defined, can't finalize";
+  }
+  if ( not exists $_[0]->{ $_[1] }->{condition} ) {
+    die "provide target $_[1] has no condition defined, can't finalize";
+  }
+  if ( not exists $_[0]->{ $_[1] }->{prereqs} ) {
+    die "provide target $_[1] has no prereqs defined, can't finalize";
+  }
+}
+
+sub add_condition {
+  if ( not exists $_[0]->{ $_[1] } ) {
+    die "provide target $_[1] not defined, can't add condition";
+  }
+  if ( exists $_[0]->{ $_[1] }->{condition} ) {
+    die "provide target $_[1] already has a condition";
+  }
+  $_[0]->{ $_[1] }->{condition} = {
+    description => $_[2],
+    code        => $_[3],
+  };
+}
+
+sub add_requirement {
+  if ( not exists $_[0]->{ $_[1] } ) {
+    die "provide target $_[1] not defined, can't add requirement";
+  }
+  $_[0]->{ $_[1] }->{prereqs} = {} unless exists $_[0]->{ $_[1] }->{prereqs};
+  my $prereqs = $_[0]->{ $_[1] }->{prereqs};
+  $prereqs->{ $_[2] } = {} unless exists $prereqs->{ $_[2] };
+  $prereqs->{ $_[2] }->{ $_[3] } = {} unless exists $prereqs->{ $_[2] }->{ $_[3] };
+  my $version = defined $_[5] ? $_[5] : 0;
+  if ( not exists $prereqs->{ $_[2] }->{ $_[3] }->{ $_[4] } ) {
+    $prereqs->{ $_[2] }->{ $_[3] }->{ $_[4] } = $version;
+  }
+  else {
+    warn "Clobbering $_[1]/prereqs/$_[2].$_[3]'s $_[4] = $version";
+    $prereqs->{ $_[2] }->{ $_[3] }->{ $_[4] } = $version;
+  }
+}
 1;
 
 =head1 SYNOPSIS
@@ -188,6 +334,7 @@ It however has notable distinctions:
       requires $module_name  => $version;
     };
   };
+
 
 =head2 C<providing>
 

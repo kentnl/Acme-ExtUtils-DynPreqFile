@@ -1,0 +1,21 @@
+# vim: syntax=perl,filetype=perl
+
+provides "Perl 5 Support" => sub {
+
+  condition "Perl is at least version 5" => sub { $] >= 5.000 };
+
+  requires "Fake::Module::Perl5";
+
+};
+
+provides "Perl 4 Support" => sub {
+
+  condition "Perl is not at least version 5" => sub { $] < 5.000 };
+
+  requires "Fake::Module::Perl4";
+
+  on "build" => sub {
+    suggests "Fake::Module::Perl4::Suggested" => 4.0;
+  };
+
+};
