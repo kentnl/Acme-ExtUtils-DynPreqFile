@@ -10,6 +10,7 @@ sub _clean_eval {
 }
 
 our $VERSION = '0.001000';
+use constant EUMM_VERSION => do { require ExtUtils::MakeMaker; $ExtUtils::MakeMaker::VERSION };
 
 # ABSTRACT: Structured Dynamic Prerequisites and Metadata extraction.
 
@@ -63,6 +64,19 @@ sub configure {
   }
   _autoflush_fh( *STDERR, $old_autoflush );
   return $rs;
+}
+
+sub _eumm_version {
+  my ($v) = @_;
+  require ExtUtils::MakeMaker;
+  return eval { ExtUtils::MakeMaker->VERSION($v) };
+}
+
+sub eumm_merge_metadata {
+  my ( $self, $wma ) = @_;
+  $wma->{META_ADD} = {} unless exists $wma->{META_ADD};
+  $wma->{META_ADD}->{'meta-spec'} = { version => 2 } unless exists $wma->{META_ADD}->{'meta-spec'};
+  $wma->{META_ADD}->{'x_dynamic_prereqs'} = $self->metadata;
 }
 
 sub _metadata {
