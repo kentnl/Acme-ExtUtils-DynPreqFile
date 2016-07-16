@@ -20,6 +20,18 @@ sub new {
   return bless { file => $file }, $class;
 }
 
+sub metadata {
+  my $meta = $_[0]->_metadata;
+  my $out  = {};
+  for my $feature ( sort keys %{$meta} ) {
+    $out->{$feature} = {
+      condition => $meta->{$feature}->{condition}->{description},
+      prereqs   => { %{ $meta->{$feature}->{prereqs} } }
+    };
+  }
+  return $out;
+}
+
 sub _metadata {
   return $_[0]->{metadata} if exists $_[0]->{metadata};
   return $_[0]->{metadata} = $_[0]->_load_metadata;
