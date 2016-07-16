@@ -6,25 +6,45 @@ use Acme::ExtUtils::DynPreqFile;
 use Path::Tiny qw(path);
 use Data::Dump qw(pp);
 
-my $config = Acme::ExtUtils::DynPreqFile->new( path(__FILE__)->sibling('dynpreqfile') );
-my %WriteMakefileArgs = ();
+my $config            = Acme::ExtUtils::DynPreqFile->new( path(__FILE__)->sibling('dynpreqfile') );
 
-warn "Start of AuthorTime Only Logic\n";
-warn "This is the metadata that would be injected in META.json and shipped\n\n";
-pp( $config->metadata );
-warn "\nAugmented WriteMakefileArgs:\n\n";
-$config->eumm_merge_metadata(\%WriteMakefileArgs);
-pp( \%WriteMakefileArgs );
-warn "\nEnd Of AuthorTime Logic\n\n";
+warn "\n\n#### AUTHOR TIME ####\n";
+warn "---------------------\n\n";
+{
+  my %WriteMakefileArgs = ();
 
-warn "Start of install-time only logic\n\n";
-my $result = $config->configure;
-warn "\nComputed install-time requirements are:\n\n";
-pp( $result->configured_requirements );
-warn "\nEnd of install-time logic\n";
+  warn "This is the metadata that would be injected in META.json and shipped\n\n";
+  pp( $config->metadata );
+
+  warn "\nAugmented WriteMakefileArgs:\n\n";
+  $config->eumm_merge_metadata( \%WriteMakefileArgs );
+  pp( \%WriteMakefileArgs );
+}
+
+warn "\n\n#### INSTALL TIME ####\n";
+warn "----------------------\n\n";
+
+{
+  my %WriteMakefileArgs = ();
+
+  my $result = $config->configure;
+
+  warn "\nComputed install-time requirements are:\n\n";
+  pp( $result->configured_requirements );
+
+  warn "\nAugmented MakefileArgs:\n\n";
+  $result->eumm_merge_config( \%WriteMakefileArgs );
+  pp( \%WriteMakefileArgs );
+
+}
 
 __END__
-Start of AuthorTime Only Logic
+
+
+
+#### AUTHOR TIME ####
+---------------------
+
 This is the metadata that would be injected in META.json and shipped
 
 {
@@ -62,9 +82,9 @@ Augmented WriteMakefileArgs:
   },
 }
 
-End Of AuthorTime Logic
 
-Start of install-time only logic
+#### INSTALL TIME ####
+----------------------
 
 - Perl 4 Support
   * Perl is not at least version 5? [N]
@@ -75,4 +95,11 @@ Computed install-time requirements are:
 
 { runtime => { requires => { "Fake::Module::Perl5" => 0 } } }
 
-End of install-time logic
+Augmented MakefileArgs:
+
+{
+  META_ADD  => {
+                 prereqs => { runtime => { requires => { "Fake::Module::Perl5" => 0 } } },
+               },
+  PREREQ_PM => { "Fake::Module::Perl5" => 0 },
+}

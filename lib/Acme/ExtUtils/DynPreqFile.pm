@@ -10,7 +10,6 @@ sub _clean_eval {
 }
 
 our $VERSION = '0.001000';
-use constant EUMM_VERSION => do { require ExtUtils::MakeMaker; $ExtUtils::MakeMaker::VERSION };
 
 # ABSTRACT: Structured Dynamic Prerequisites and Metadata extraction.
 
@@ -219,6 +218,10 @@ sub add_requirement {
 package    # Hide from PAUSE
   Acme::ExtUtils::DynPreqFile::Result;
 
+use ExtUtils::MakeMaker ();
+use constant EUMM_TEST_REQUIRES  => $ExtUtils::MakeMaker::VERSION >= 6.63_03;
+use constant EUMM_BUILD_REQUIRES => $ExtUtils::MakeMaker::VERSION >= 6.55_01;
+
 sub new { bless { results => {} }, $_[0] }
 
 sub add_result {
@@ -229,21 +232,72 @@ sub add_result {
   };
 }
 
+sub _merge {
+  my ( $target, $additional ) = @_;
+  for my $module ( sort keys %{$additional} ) {
+    ## TODO: Proper merging
+    $target->{$module} = $additional->{$module}
+      unless defined $target->{$module} and eval { $target->{$module} > $additional->{$module} };
+  }
+}
+
+sub _merge_deep {
+  my ( $target, $additional ) = @_;
+  for my $phase ( sort keys %{$additional} ) {
+    for my $rel ( sort keys %{ $additional->{$phase} } ) {
+      $target->{$phase}->{$rel} = {} unless exists $target->{$phase}->{$rel};
+      _merge( $target->{$phase}->{$rel}, $additional->{$phase}->{$rel} );
+    }
+  }
+
+  # TODO: Proper cross-phase correction
+}
+
 sub configured_requirements {
   my ($self) = @_;
   my $prereqs = {};
   for my $result ( sort keys %{ $self->{results} } ) {
     next unless $self->{results}->{$result}->{state};
-    ## TODO: Proper merging
-    for my $phase ( sort keys %{ $self->{results}->{$result}->{prereqs} } ) {
-      for my $rel ( sort keys %{ $self->{results}->{$result}->{prereqs}->{$phase} } ) {
-        for my $module ( sort keys %{ $self->{results}->{$result}->{prereqs}->{$phase}->{$rel} } ) {
-          $prereqs->{$phase}->{$rel}->{$module} = $self->{results}->{$result}->{prereqs}->{$phase}->{$rel}->{$module};
-        }
-      }
-    }
+    _merge_deep( $prereqs, $self->{results}->{$result}->{prereqs} );
   }
   return $prereqs;
+}
+
+sub eumm_merge_config {
+  my ( $self, $wma ) = @_;
+  my $reqs = $self->configured_requirements;
+  return unless keys %{$reqs};
+  $wma->{META_ADD} = {} unless exists $wma->{META_ADD};
+  $wma->{META_ADD}->{prereqs} = {} unless exists $wma->{META_ADD}->{prereqs};
+  _merge_deep( $wma->{META_ADD}->{prereqs}, $reqs );
+  if ( exists $reqs->{test} and exists $reqs->{test}->{requires} ) {
+    if (EUMM_TEST_REQUIRES) {
+      $wma->{TEST_REQUIRES} = {} unless exists $wma->{TEST_REQUIRES};
+      _merge( $wma->{TEST_REQUIRES}, $reqs->{test}->{requires} );
+    }
+    elsif (EUMM_BUILD_REQUIRES) {
+      $wma->{BUILD_REQUIRES} = {} unless exists $wma->{BUILD_REQUIRES};
+      _merge( $wma->{BUILD_REQUIRES}, $reqs->{test}->{requires} );
+    }
+    else {
+      $wma->{PREREQ_PM} = {} unless exists $wma->{PREREQ_PM};
+      _merge( $wma->{PREREQ_PM}, $reqs->{test}->{requires} );
+    }
+  }
+  if ( exists $reqs->{build} and exists $reqs->{build}->{requires} ) {
+    if (EUMM_BUILD_REQUIRES) {
+      $wma->{BUILD_REQUIRES} = {} unless exists $wma->{BUILD_REQUIRES};
+      _merge( $wma->{BUILD_REQUIRES}, $reqs->{build}->{requires} );
+    }
+    else {
+      $wma->{PREREQ_PM} = {} unless exists $wma->{PREREQ_PM};
+      _merge( $wma->{PREREQ_PM}, $reqs->{build}->{requires} );
+    }
+  }
+  if ( exists $reqs->{runtime} and exists $reqs->{runtime}->{requires} ) {
+    $wma->{PREREQ_PM} = {} unless exists $wma->{PREREQ_PM};
+    _merge( $wma->{PREREQ_PM}, $reqs->{runtime}->{requires} );
+  }
 }
 
 1;
